@@ -1,8 +1,16 @@
 services:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - frontend
+      - backend
+
   frontend:
     build: ./frontend
-    ports:
-      - "5173:5173"
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -11,7 +19,12 @@ services:
 
   backend:
     build: ./backend
-    ports:
-      - "8000:8000"
     volumes:
       - ./backend:/app
+
+  attacker:
+    build: ./attacker
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./attacker:/app

@@ -51,6 +51,16 @@ button:disabled {
   cursor: not-allowed;
 }
 
+.required {
+  color: #e53e3e;
+}
+
+.field-error {
+  color: #e53e3e;
+  font-size: 0.8rem;
+  font-weight: normal;
+}
+
 .error {
   color: #e53e3e;
   margin-top: 1rem;

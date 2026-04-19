@@ -1,66 +1,43 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
 
-type FormData = {
-  name: string;
+type User = {
+  username: string;
   email: string;
-  message: string;
+  role: string;
 };
 
-type FormErrors = Partial<Record<keyof FormData, string>>;
+type LoginErrors = Partial<Record<"username" | "password", string>>;
 
-type SubmitResult = {
-  received: FormData;
-};
+// ---- Login ----
 
-function validate(form: FormData): FormErrors {
-  const errors: FormErrors = {};
-  if (!form.name.trim()) errors.name = "名前は必須です";
-  if (!form.email.trim()) {
-    errors.email = "メールアドレスは必須です";
-  } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
-    errors.email = "有効なメールアドレスを入力してください";
-  }
-  if (!form.message.trim()) errors.message = "メッセージは必須です";
-  return errors;
-}
-
-function App() {
-  const [form, setForm] = useState<FormData>({
-    name: "",
-    email: "",
-    message: "",
-  });
-  const [errors, setErrors] = useState<FormErrors>({});
-  const [result, setResult] = useState<SubmitResult | null>(null);
+function LoginPage({ onLogin }: { onLogin: (user: User) => void }) {
+  const [form, setForm] = useState({ username: "", password: "" });
+  const [errors, setErrors] = useState<LoginErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
-  ) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const updated = { ...form, [e.target.name]: e.target.value };
     setForm(updated);
-    if (errors[e.target.name as keyof FormData]) {
+    if (errors[e.target.name as keyof LoginErrors]) {
       const next = { ...errors };
-      delete next[e.target.name as keyof FormData];
+      delete next[e.target.name as keyof LoginErrors];
       setErrors(next);
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const validationErrors = validate(form);
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors);
-      return;
-    }
+    const next: LoginErrors = {};
+    if (!form.username.trim()) next.username = "ユーザー名は必須です";
+    if (!form.password.trim()) next.password = "パスワードは必須です";
+    if (Object.keys(next).length > 0) { setErrors(next); return; }
 
     setLoading(true);
     setSubmitError(null);
-    setResult(null);
     try {
-      const res = await fetch("/api/submit", {
+      const res = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -68,12 +45,16 @@ function App() {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        throw new Error(body?.detail ?? `Server error: ${res.status}`);
+        throw new Error(body?.detail ?? "ログインに失敗しました");
       }
-      const data: SubmitResult = await res.json();
-      setResult(data);
-      setForm({ name: "", email: "", message: "" });
-      setErrors({});
+      const loginData = await res.json();
+      if (loginData.redirect) {
+        window.location.href = loginData.redirect;
+        return;
+      }
+      const meRes = await fetch("/api/me", { credentials: "include" });
+      const user: User = await meRes.json();
+      onLogin(user);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -82,60 +63,86 @@ function App() {
   };
 
   return (
-    <div className="container">
-      <h1>お問い合わせフォーム</h1>
-      <form onSubmit={handleSubmit} className="form" noValidate>
-        <label>
-          名前 <span className="required">*</span>
-          <input name="name" value={form.name} onChange={handleChange} />
-          {errors.name && <span className="field-error">{errors.name}</span>}
-        </label>
-        <label>
-          メールアドレス <span className="required">*</span>
-          <input
-            type="email"
-            name="email"
-            value={form.email}
-            onChange={handleChange}
-          />
-          {errors.email && <span className="field-error">{errors.email}</span>}
-        </label>
-        <label>
-          メッセージ <span className="required">*</span>
-          <textarea
-            name="message"
-            value={form.message}
-            onChange={handleChange}
-            rows={4}
-          />
-          {errors.message && (
-            <span className="field-error">{errors.message}</span>
-          )}
-        </label>
-        <button type="submit" disabled={loading}>
-          {loading ? "送信中..." : "送信"}
-        </button>
-      </form>
-
-      {submitError && <p className="error">{submitError}</p>}
-
-      {result && (
-        <div className="result">
-          <h2>送信内容</h2>
-          {/* ❌ 意図的に危険な表示に変える */}
-          <div
-            dangerouslySetInnerHTML={{
-              __html: `
-      <p><strong>名前:</strong> ${result.received.name}</p>
-      <p><strong>メール:</strong> ${result.received.email}</p>
-      <p><strong>メッセージ:</strong> ${result.received.message}</p>
-    `,
-            }}
-          />
-        </div>
-      )}
+    <div className="page-center">
+      <div className="card">
+        <h1 className="card-title">ログイン</h1>
+        <form onSubmit={handleSubmit} className="form" noValidate>
+          <label>
+            ユーザー名 <span className="required">*</span>
+            <input name="username" value={form.username} onChange={handleChange} />
+            {errors.username && <span className="field-error">{errors.username}</span>}
+          </label>
+          <label>
+            パスワード <span className="required">*</span>
+            <input type="password" name="password" value={form.password} onChange={handleChange} />
+            {errors.password && <span className="field-error">{errors.password}</span>}
+          </label>
+          <button type="submit" disabled={loading}>
+            {loading ? "確認中..." : "ログイン"}
+          </button>
+        </form>
+        {submitError && <p className="error">{submitError}</p>}
+      </div>
     </div>
   );
 }
 
-export default App;
+// ---- Dashboard ----
+
+function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
+  return (
+    <div className="dashboard">
+      <header className="dashboard-header">
+        <span className="dashboard-logo">MyService</span>
+        <div className="dashboard-user">
+          {/* ❌ 意図的に危険な表示（XSSデモ用） */}
+          <span dangerouslySetInnerHTML={{ __html: `ようこそ、<strong>${user.username}</strong> さん` }} />
+          <button className="btn-logout" onClick={onLogout}>ログアウト</button>
+        </div>
+      </header>
+
+      <main className="dashboard-main">
+        <h2>ダッシュボード</h2>
+        <div className="stats">
+          <div className="stat-card">
+            <p className="stat-label">ユーザー名</p>
+            <p className="stat-value">{user.username}</p>
+          </div>
+          <div className="stat-card">
+            <p className="stat-label">メールアドレス</p>
+            <p className="stat-value">{user.email}</p>
+          </div>
+          <div className="stat-card">
+            <p className="stat-label">ロール</p>
+            <p className="stat-value">{user.role}</p>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// ---- App ----
+
+export default function App() {
+  const [user, setUser] = useState<User | null>(null);
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/me", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((u) => setUser(u))
+      .finally(() => setChecking(false));
+  }, []);
+
+  const handleLogout = () => {
+    document.cookie = "session_id=; max-age=0; path=/";
+    setUser(null);
+  };
+
+  if (checking) return null;
+
+  return user
+    ? <Dashboard user={user} onLogout={handleLogout} />
+    : <LoginPage onLogin={setUser} />;
+}

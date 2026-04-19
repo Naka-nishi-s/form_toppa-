@@ -9,6 +9,17 @@ services:
       - frontend
       - backend
 
+  phishing-nginx:
+    image: nginx:alpine
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./nginx/phishing.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - frontend
+      - backend
+      - phishing-api
+
   frontend:
     build: ./frontend
     volumes:
@@ -28,3 +39,11 @@ services:
       - "9000:9000"
     volumes:
       - ./attacker:/app
+
+  phishing-api:
+    build: ./phishing
+    volumes:
+      - ./phishing:/app
+    depends_on:
+      - backend
+      - attacker

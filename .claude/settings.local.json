@@ -6,7 +6,8 @@
       "Bash(docker stop *)",
       "Bash(docker rm *)",
       "Bash(docker-compose up *)",
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "Bash(git rm *)"
     ]
   }
 }

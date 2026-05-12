@@ -32,7 +32,10 @@ function LoginPage({ onLogin }: { onLogin: (user: User) => void }) {
     const next: LoginErrors = {};
     if (!form.username.trim()) next.username = "ユーザー名は必須です";
     if (!form.password.trim()) next.password = "パスワードは必須です";
-    if (Object.keys(next).length > 0) { setErrors(next); return; }
+    if (Object.keys(next).length > 0) {
+      setErrors(next);
+      return;
+    }
 
     setLoading(true);
     setSubmitError(null);
@@ -69,13 +72,26 @@ function LoginPage({ onLogin }: { onLogin: (user: User) => void }) {
         <form onSubmit={handleSubmit} className="form" noValidate>
           <label>
             ユーザー名 <span className="required">*</span>
-            <input name="username" value={form.username} onChange={handleChange} />
-            {errors.username && <span className="field-error">{errors.username}</span>}
+            <input
+              name="username"
+              value={form.username}
+              onChange={handleChange}
+            />
+            {errors.username && (
+              <span className="field-error">{errors.username}</span>
+            )}
           </label>
           <label>
             パスワード <span className="required">*</span>
-            <input type="password" name="password" value={form.password} onChange={handleChange} />
-            {errors.password && <span className="field-error">{errors.password}</span>}
+            <input
+              type="password"
+              name="password"
+              value={form.password}
+              onChange={handleChange}
+            />
+            {errors.password && (
+              <span className="field-error">{errors.password}</span>
+            )}
           </label>
           <button type="submit" disabled={loading}>
             {loading ? "確認中..." : "ログイン"}
@@ -96,8 +112,10 @@ function Dashboard({ user, onLogout }: { user: User; onLogout: () => void }) {
         <span className="dashboard-logo">MyService</span>
         <div className="dashboard-user">
           {/* ❌ 意図的に危険な表示（XSSデモ用） */}
-          <span dangerouslySetInnerHTML={{ __html: `ようこそ、<strong>${user.username}</strong> さん` }} />
-          <button className="btn-logout" onClick={onLogout}>ログアウト</button>
+          <span>{user.username}</span>
+          <button className="btn-logout" onClick={onLogout}>
+            ログアウト
+          </button>
         </div>
       </header>
 
@@ -142,7 +160,9 @@ export default function App() {
 
   if (checking) return null;
 
-  return user
-    ? <Dashboard user={user} onLogout={handleLogout} />
-    : <LoginPage onLogin={setUser} />;
+  return user ? (
+    <Dashboard user={user} onLogout={handleLogout} />
+  ) : (
+    <LoginPage onLogin={setUser} />
+  );
 }

